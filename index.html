@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>브레이크아웃 · 벽돌깨기</title>
+<style>
+  :root{
+    --bg-deep: #0a0e1a;
+    --bg-panel: #11162a;
+    --line: #232a45;
+    --ink: #eef1fb;
+    --ink-dim: #7d86a8;
+    --cyan: #4ce0d2;
+    --violet: #8b7bff;
+    --coral: #ff6b6b;
+    --amber: #ffc85e;
+    --lime: #a3e635;
+  }
+
+  *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{
+    margin:0; padding:0; height:100%; overflow:hidden;
+    background: var(--bg-deep);
+    color: var(--ink);
+    font-family: 'Courier New', ui-monospace, monospace;
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+
+  body{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height: 100dvh;
+    background:
+      radial-gradient(1200px 800px at 50% -10%, #1a1f3a 0%, transparent 60%),
+      var(--bg-deep);
+  }
+
+  #stage{
+    position:relative;
+    width:100%;
+    max-width: 480px;
+    height:100dvh;
+    max-height: 860px;
+    display:flex;
+    flex-direction:column;
+    padding: env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0);
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 14px 18px 10px;
+    flex-shrink:0;
+  }
+  .hud-block{ display:flex; flex-direction:column; gap:2px; min-width:64px; }
+  .hud-label{
+    font-size: 10px; letter-spacing: 0.14em; color: var(--ink-dim);
+    text-transform:uppercase;
+  }
+  .hud-value{
+    font-size: 20px; font-weight:700; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  #title-mark{
+    display:flex; align-items:center; gap:8px;
+    font-size:13px; letter-spacing:0.18em; color: var(--cyan);
+    text-transform:uppercase; font-weight:700;
+  }
+  #title-mark .dot{ width:7px; height:7px; border-radius:50%; background: var(--coral); box-shadow:0 0 8px var(--coral); }
+  #lives{ display:flex; gap:5px; justify-content:flex-end; }
+  .life-pip{
+    width:9px; height:9px; border-radius:2px;
+    background: var(--coral);
+    box-shadow: 0 0 6px rgba(255,107,107,0.7);
+  }
+  .life-pip.lost{ background: transparent; border:1px solid var(--line); box-shadow:none; }
+
+  /* ---------- Canvas area ---------- */
+  #game-wrap{
+    position:relative;
+    flex:1;
+    margin: 0 12px 12px;
+    border-radius: 18px;
+    background: var(--bg-panel);
+    border:1px solid var(--line);
+    overflow:hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02), 0 20px 50px -20px rgba(0,0,0,0.6);
+  }
+  canvas{
+    display:block;
+    width:100%;
+    height:100%;
+    touch-action:none;
+  }
+
+  /* ---------- Overlays ---------- */
+  .overlay{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:18px;
+    background: rgba(10,14,26,0.86);
+    backdrop-filter: blur(3px);
+    text-align:center;
+    padding: 24px;
+    opacity:0; pointer-events:none;
+    transition: opacity .25s ease;
+  }
+  .overlay.show{ opacity:1; pointer-events:auto; }
+  .overlay h1{
+    margin:0; font-size:26px; letter-spacing:0.06em;
+    color:var(--ink);
+  }
+  .overlay .accent{ color: var(--cyan); }
+  .overlay p{
+    margin:0; max-width:280px; font-size:13px; line-height:1.7; color: var(--ink-dim);
+  }
+  .overlay .big-score{
+    font-size: 42px; font-weight:700; color: var(--amber);
+    text-shadow: 0 0 22px rgba(255,200,94,0.35);
+  }
+  button.cta{
+    appearance:none; border:none; cursor:pointer;
+    padding: 13px 30px;
+    border-radius: 999px;
+    font-family:inherit; font-weight:700; font-size:14px; letter-spacing:0.06em;
+    text-transform:uppercase;
+    background: linear-gradient(135deg, var(--cyan), var(--violet));
+    color: #0a0e1a;
+    box-shadow: 0 10px 30px -10px rgba(76,224,210,0.6);
+  }
+  button.cta:active{ transform: scale(0.97); }
+  .hint{
+    font-size:11px; color: var(--ink-dim); letter-spacing:0.04em;
+  }
+  .hint .key{
+    display:inline-block; border:1px solid var(--line); border-radius:5px;
+    padding:1px 6px; margin:0 2px; color: var(--ink);
+  }
+
+  #mobile-badge{ display:none; }
+  @media (pointer:coarse){
+    #mobile-badge{ display:inline; }
+    #desktop-badge{ display:none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="hud">
+    <div class="hud-block">
+      <span class="hud-label">Score</span>
+      <span class="hud-value" id="score-val">0</span>
+    </div>
+    <div id="title-mark"><span class="dot"></span>Breakout</div>
+    <div class="hud-block" style="align-items:flex-end;">
+      <span class="hud-label">Lives</span>
+      <div id="lives"></div>
+    </div>
+  </div>
+
+  <div id="game-wrap">
+    <canvas id="game"></canvas>
+
+    <div class="overlay show" id="overlay-start">
+      <h1>벽돌<span class="accent">깨기</span></h1>
+      <p id="mobile-badge">패들을 드래그해서 공을 튕겨내고<br>모든 벽돌을 깨보세요.</p>
+      <p id="desktop-badge">← → 방향키 또는 마우스로 패들을 움직여<br>모든 벽돌을 깨보세요.</p>
+      <button class="cta" id="btn-start">시작하기</button>
+    </div>
+
+    <div class="overlay" id="overlay-pause">
+      <h1>일시정지</h1>
+      <button class="cta" id="btn-resume">계속하기</button>
+    </div>
+
+    <div class="overlay" id="overlay-lose">
+      <h1>게임 <span class="accent" style="color:var(--coral)">오버</span></h1>
+      <div class="big-score" id="lose-score">0</div>
+      <p>점수를 획득했어요. 다시 도전해보세요!</p>
+      <button class="cta" id="btn-retry">다시 시작</button>
+    </div>
+
+    <div class="overlay" id="overlay-win">
+      <h1>클리어 <span class="accent">!</span></h1>
+      <div class="big-score" id="win-score">0</div>
+      <p>모든 벽돌을 깼습니다. 다음 스테이지로 넘어갈까요?</p>
+      <button class="cta" id="btn-next">다음 스테이지</button>
+    </div>
+  </div>
+
+  <div style="text-align:center; padding-bottom:10px; flex-shrink:0;">
+    <span class="hint" id="bottom-hint">일시정지: <span class="key">Space</span></span>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('game-wrap');
+
+  const scoreEl = document.getElementById('score-val');
+  const livesEl = document.getElementById('lives');
+  const overlayStart = document.getElementById('overlay-start');
+  const overlayPause = document.getElementById('overlay-pause');
+  const overlayLose = document.getElementById('overlay-lose');
+  const overlayWin = document.getElementById('overlay-win');
+  const loseScoreEl = document.getElementById('lose-score');
+  const winScoreEl = document.getElementById('win-score');
+
+  const COLORS = {
+    ball: '#eef1fb',
+    paddle: ['#4ce0d2', '#8b7bff'],
+    rowColors: ['#ff6b6b', '#ffc85e', '#a3e635', '#4ce0d2', '#8b7bff'],
+    bg: '#11162a'
+  };
+
+  let DPR = Math.min(window.devicePixelRatio || 1, 2);
+  let W, H;
+
+  const ROWS = 5, COLS = 7;
+  const BRICK_GAP = 6;
+  const BRICK_TOP_MARGIN = 40;
+  const BRICK_SIDE_MARGIN = 10;
+  const BRICK_HEIGHT = 20;
+
+  let paddle, ball, bricks = [];
+  let score = 0, lives = 3, level = 1;
+  let state = 'start'; // start, playing, paused, lose, win
+  let paddleTargetX = null;
+  let particles = [];
+
+  function resize(){
+    const rect = wrap.getBoundingClientRect();
+    W = rect.width; H = rect.height;
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+
+    if(paddle){
+      paddle.w = Math.max(70, W * 0.22);
+      paddle.h = 14;
+      paddle.y = H - 34;
+      paddle.x = Math.min(Math.max(paddle.x, 0), W - paddle.w);
+    }
+    layoutBricks();
+  }
+
+  function layoutBricks(){
+    const areaW = W - BRICK_SIDE_MARGIN*2;
+    const brickW = (areaW - BRICK_GAP*(COLS-1)) / COLS;
+    bricks.forEach(b => {
+      b.w = brickW;
+      b.h = BRICK_HEIGHT;
+      b.x = BRICK_SIDE_MARGIN + b.col * (brickW + BRICK_GAP);
+      b.y = BRICK_TOP_MARGIN + b.row * (BRICK_HEIGHT + BRICK_GAP);
+    });
+  }
+
+  function createBricks(){
+    bricks = [];
+    for(let r=0;r<ROWS;r++){
+      for(let c=0;c<COLS;c++){
+        bricks.push({
+          row:r, col:c,
+          color: COLORS.rowColors[r % COLORS.rowColors.length],
+          alive:true,
+          hp: (r < 1 && level>1) ? 2 : 1
+        });
+      }
+    }
+    layoutBricks();
+  }
+
+  function resetBallAndPaddle(){
+    paddle = {
+      w: Math.max(70, W*0.22), h:14,
+      x: W/2 - Math.max(70,W*0.22)/2,
+      y: H - 34,
+      speed: 8
+    };
+    const speed = 4.4 + (level-1)*0.4;
+    ball = {
+      r: 7,
+      x: W/2, y: paddle.y - 20,
+      vx: speed * (Math.random() > 0.5 ? 1 : -1) * 0.6,
+      vy: -speed,
+      trail: []
+    };
+  }
+
+  function initGame(newLevel){
+    if(newLevel) level = newLevel; else level = 1;
+    score = 0; lives = 3;
+    createBricks();
+    resetBallAndPaddle();
+    updateHud();
+  }
+
+  function updateHud(){
+    scoreEl.textContent = score;
+    livesEl.innerHTML = '';
+    for(let i=0;i<3;i++){
+      const pip = document.createElement('div');
+      pip.className = 'life-pip' + (i < lives ? '' : ' lost');
+      livesEl.appendChild(pip);
+    }
+  }
+
+  function setState(s){
+    state = s;
+    overlayStart.classList.toggle('show', s==='start');
+    overlayPause.classList.toggle('show', s==='paused');
+    overlayLose.classList.toggle('show', s==='lose');
+    overlayWin.classList.toggle('show', s==='win');
+  }
+
+  // ---------- input ----------
+  function pointerXToPaddle(clientX){
+    const rect = canvas.getBoundingClientRect();
+    let x = clientX - rect.left - paddle.w/2;
+    x = Math.max(0, Math.min(W - paddle.w, x));
+    paddleTargetX = x;
+  }
+
+  canvas.addEventListener('pointerdown', (e)=>{
+    if(state === 'start'){ startGame(); return; }
+    if(state === 'lose'){ startGame(true); return; }
+    if(state === 'win'){ nextLevel(); return; }
+    pointerXToPaddle(e.clientX);
+  });
+  canvas.addEventListener('pointermove', (e)=>{
+    if(state !== 'playing') return;
+    if(e.buttons === 0 && e.pointerType === 'mouse') { pointerXToPaddle(e.clientX); return; }
+    pointerXToPaddle(e.clientX);
+  });
+
+  const keys = {};
+  window.addEventListener('keydown', (e)=>{
+    keys[e.code] = true;
+    if(e.code === 'Space'){
+      e.preventDefault();
+      if(state === 'playing') setState('paused');
+      else if(state === 'paused') setState('playing');
+      else if(state === 'start') startGame();
+      else if(state === 'lose') startGame(true);
+      else if(state === 'win') nextLevel();
+    }
+  });
+  window.addEventListener('keyup', (e)=>{ keys[e.code] = false; });
+
+  document.getElementById('btn-start').addEventListener('click', ()=>startGame());
+  document.getElementById('btn-resume').addEventListener('click', ()=>setState('playing'));
+  document.getElementById('btn-retry').addEventListener('click', ()=>startGame(true));
+  document.getElementById('btn-next').addEventListener('click', ()=>nextLevel());
+
+  function startGame(reset){
+    if(reset || state==='start') initGame(reset ? 1 : 1);
+    paddleTargetX = paddle.x;
+    setState('playing');
+  }
+  function nextLevel(){
+    const carriedScore = score;
+    initGame(level+1);
+    score = carriedScore;
+    updateHud();
+    paddleTargetX = paddle.x;
+    setState('playing');
+  }
+
+  // ---------- physics ----------
+  function step(){
+    if(state !== 'playing') return;
+
+    // paddle movement (keyboard)
+    if(keys['ArrowLeft']) paddle.x -= paddle.speed;
+    if(keys['ArrowRight']) paddle.x += paddle.speed;
+
+    // paddle movement (pointer, eased for smooth mobile drag)
+    if(paddleTargetX !== null){
+      paddle.x += (paddleTargetX - paddle.x) * 0.35;
+    }
+    paddle.x = Math.max(0, Math.min(W - paddle.w, paddle.x));
+
+    // ball
+    ball.trail.push({x:ball.x, y:ball.y});
+    if(ball.trail.length > 10) ball.trail.shift();
+
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+
+    if(ball.x - ball.r < 0){ ball.x = ball.r; ball.vx *= -1; }
+    if(ball.x + ball.r > W){ ball.x = W - ball.r; ball.vx *= -1; }
+    if(ball.y - ball.r < 0){ ball.y = ball.r; ball.vy *= -1; }
+
+    // paddle collision
+    if(ball.vy > 0 &&
+       ball.y + ball.r >= paddle.y &&
+       ball.y + ball.r <= paddle.y + paddle.h + 10 &&
+       ball.x >= paddle.x - ball.r &&
+       ball.x <= paddle.x + paddle.w + ball.r){
+      const hit = (ball.x - (paddle.x + paddle.w/2)) / (paddle.w/2); // -1..1
+      const speed = Math.hypot(ball.vx, ball.vy);
+      const maxAngle = Math.PI * 0.38;
+      const angle = hit * maxAngle;
+      ball.vx = speed * Math.sin(angle);
+      ball.vy = -Math.abs(speed * Math.cos(angle));
+      ball.y = paddle.y - ball.r - 0.5;
+    }
+
+    // brick collision
+    for(const b of bricks){
+      if(!b.alive) continue;
+      if(ball.x + ball.r > b.x && ball.x - ball.r < b.x + b.w &&
+         ball.y + ball.r > b.y && ball.y - ball.r < b.y + b.h){
+        // determine collision side
+        const overlapLeft = (ball.x + ball.r) - b.x;
+        const overlapRight = (b.x + b.w) - (ball.x - ball.r);
+        const overlapTop = (ball.y + ball.r) - b.y;
+        const overlapBottom = (b.y + b.h) - (ball.y - ball.r);
+        const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+        if(minOverlap === overlapTop || minOverlap === overlapBottom) ball.vy *= -1;
+        else ball.vx *= -1;
+
+        b.hp -= 1;
+        spawnParticles(b);
+        if(b.hp <= 0){
+          b.alive = false;
+          score += 10 * level;
+        } else {
+          score += 4;
+        }
+        updateHud();
+        break;
+      }
+    }
+
+    // lose ball
+    if(ball.y - ball.r > H){
+      lives -= 1;
+      updateHud();
+      if(lives <= 0){
+        loseScoreEl.textContent = score;
+        setState('lose');
+      } else {
+        resetBallAndPaddle();
+        paddleTargetX = paddle.x;
+      }
+    }
+
+    // win check
+    if(bricks.every(b => !b.alive)){
+      winScoreEl.textContent = score;
+      setState('win');
+    }
+
+    // particles
+    particles.forEach(p=>{ p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= 1; });
+    particles = particles.filter(p => p.life > 0);
+  }
+
+  function spawnParticles(b){
+    const cx = b.x + b.w/2, cy = b.y + b.h/2;
+    for(let i=0;i<6;i++){
+      particles.push({
+        x: cx, y: cy,
+        vx: (Math.random()-0.5)*4,
+        vy: (Math.random()-0.5)*4 - 1,
+        life: 20 + Math.random()*10,
+        color: b.color
+      });
+    }
+  }
+
+  // ---------- render ----------
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+
+    // bricks
+    bricks.forEach(b=>{
+      if(!b.alive) return;
+      ctx.save();
+      ctx.fillStyle = b.color;
+      ctx.shadowColor = b.color;
+      ctx.shadowBlur = b.hp > 1 ? 14 : 6;
+      roundRect(ctx, b.x, b.y, b.w, b.h, 5);
+      ctx.fill();
+      if(b.hp > 1){
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = '#ffffff';
+        roundRect(ctx, b.x, b.y, b.w, b.h/2, 5);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+
+    // particles
+    particles.forEach(p=>{
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.life/30);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x-2, p.y-2, 4, 4);
+      ctx.restore();
+    });
+
+    // ball trail
+    ball.trail.forEach((t,i)=>{
+      ctx.save();
+      ctx.globalAlpha = (i/ball.trail.length) * 0.25;
+      ctx.fillStyle = COLORS.ball;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, ball.r*0.8, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // ball
+    ctx.save();
+    ctx.fillStyle = COLORS.ball;
+    ctx.shadowColor = '#4ce0d2';
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    // paddle
+    ctx.save();
+    const grad = ctx.createLinearGradient(paddle.x,0,paddle.x+paddle.w,0);
+    grad.addColorStop(0, COLORS.paddle[0]);
+    grad.addColorStop(1, COLORS.paddle[1]);
+    ctx.fillStyle = grad;
+    ctx.shadowColor = COLORS.paddle[0];
+    ctx.shadowBlur = 16;
+    roundRect(ctx, paddle.x, paddle.y, paddle.w, paddle.h, 7);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function roundRect(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function loop(){
+    step();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- boot ----------
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', ()=>setTimeout(resize,200));
+
+  // initial sizing needs paddle/ball to exist for layout math guard
+  paddle = {w:80,h:14,x:0,y:0,speed:8};
+  ball = {r:7,x:0,y:0,vx:0,vy:0,trail:[]};
+  createBricks();
+  resize();
+  initGame(1);
+  setState('start');
+  loop();
+})();
+</script>
+</body>
+</html>
